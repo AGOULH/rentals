@@ -189,6 +189,7 @@
     <nav id="nav">
       <button data-v="dashboard" onclick="go('dashboard')">📊 لوحة التحكم</button>
       <button data-v="properties" onclick="go('properties')">🏘️ العقارات</button>
+      <button data-v="accounting" onclick="go('accounting')">🧮 المحاسبة</button>
       <button onclick="openSettings()">⚙️ الإعدادات</button>
     </nav>
   </div>
@@ -226,12 +227,12 @@ try{
 }catch(e){ cloud.ready = false; console.warn('Firebase init', e); }
 
 function defaults(){
-  return { settings:{ currency:'ريال', paymentReminderDays:30, deliveryReminderDays:60 }, buildings:[], units:[] };
+  return { settings:{ currency:'ريال', paymentReminderDays:30, deliveryReminderDays:60 }, buildings:[], units:[], expenses:[] };
 }
 function normalize(d){
   d = d || defaults();
   d.settings = Object.assign(defaults().settings, d.settings||{});
-  d.buildings = d.buildings||[]; d.units = d.units||[];
+  d.buildings = d.buildings||[]; d.units = d.units||[]; d.expenses = d.expenses||[];
   return d;
 }
 function loadLocal(){
@@ -306,6 +307,7 @@ function render(){
   if(view.name==='dashboard') app.innerHTML=viewDashboard();
   else if(view.name==='properties') app.innerHTML=viewProperties();
   else if(view.name==='building') app.innerHTML=viewBuilding(view.buildingId);
+  else if(view.name==='accounting') app.innerHTML=viewAccounting();
 }
 
 /* ---------- لوحة التحكم ---------- */
@@ -405,6 +407,240 @@ function viewDashboard(){
   return h;
 }
 function stat(c,ic,val,lbl){ return `<div class="stat"><div class="ic ${c}">${ic}</div><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`; }
+
+/* ============================ المحاسبة ============================ */
+let acctYear = null;
+function yearOf(iso){ return iso ? parseInt(iso.slice(0,4)) : null; }
+function quarterOf(iso){ return iso ? Math.floor((parseInt(iso.slice(5,7))-1)/3)+1 : null; }
+function allYears(){
+  const ys=new Set();
+  db.units.forEach(u=>(u.payments||[]).forEach(p=>{ if(p.dueDate) ys.add(yearOf(p.dueDate)); }));
+  (db.expenses||[]).forEach(e=>{ if(e.date) ys.add(yearOf(e.date)); });
+  ys.add(new Date().getFullYear());
+  return [...ys].sort((a,b)=>b-a);
+}
+/* تجميع محاسبي لفترة (سنة/ربع/عقار) بحسب تاريخ الاستحقاق الميلادي */
+function acct(year, quarter, buildingId){
+  let expected=0, collected=0, overdue=0;
+  db.units.forEach(u=>{
+    if(buildingId && u.buildingId!==buildingId) return;
+    (u.payments||[]).forEach(p=>{
+      if(yearOf(p.dueDate)!==year) return;
+      if(quarter && quarterOf(p.dueDate)!==quarter) return;
+      expected += p.amount;
+      if(p.status==='paid') collected += p.amount;
+      else if(daysFromToday(p.dueDate)<0) overdue += p.amount;
+    });
+  });
+  let expenses=0;
+  (db.expenses||[]).forEach(e=>{
+    if(buildingId && e.buildingId!==buildingId) return;
+    if(yearOf(e.date)!==year) return;
+    if(quarter && quarterOf(e.date)!==quarter) return;
+    expenses += Number(e.amount)||0;
+  });
+  return { expected, collected, outstanding:expected-collected, overdue, expenses, net:collected-expenses, rate: expected?Math.round(collected/expected*100):0 };
+}
+function rateBar(rate){
+  const col=rate>=90?'var(--success)':rate>=60?'var(--warning)':'var(--danger)';
+  return `<div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="width:70px"><span style="width:${rate}%;background:${col}"></span></div><span style="font-weight:700;font-size:12.5px">${rate}%</span></div>`;
+}
+
+function viewAccounting(){
+  if(db.buildings.length===0) return pageEmpty();
+  const years=allYears();
+  const nowY=new Date().getFullYear();
+  if(!acctYear || years.indexOf(acctYear)<0) acctYear = years.indexOf(nowY)>=0 ? nowY : years[0];
+  const y=acctYear;
+  const yr=acct(y,null,null);
+
+  let h=`<div class="page-head"><div><h1>🧮 المحاسبة</h1>
+    <div class="sub">التحصيل والمستحقات والمصروفات وصافي الدخل — تقارير ربع سنوية وسنوية</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-weight:700;font-size:13px">السنة:</label>
+      <select onchange="acctYear=parseInt(this.value);render()" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;background:#fff;font-weight:700">
+        ${years.map(yy=>`<option value="${yy}" ${yy===y?'selected':''}>${yy}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="exportAccountingPDF(${y})">📄 تقرير PDF</button>
+    </div></div>`;
+
+  h+=`<div class="stats">
+    ${stat('blue','📊',fmtMoney(yr.expected),'المستحق السنوي')}
+    ${stat('green','✅',fmtMoney(yr.collected),'المحصّل')}
+    ${stat('amber','⏳',fmtMoney(yr.outstanding),'المتبقّي')}
+    ${stat('teal','📈',yr.rate+'%','نسبة التحصيل')}
+    ${stat('red','💸',fmtMoney(yr.expenses),'المصروفات')}
+    ${stat(yr.net>=0?'green':'red','💰',fmtMoney(yr.net),'صافي الدخل')}
+  </div>`;
+
+  const qNames=['الربع الأول (يناير–مارس)','الربع الثاني (أبريل–يونيو)','الربع الثالث (يوليو–سبتمبر)','الربع الرابع (أكتوبر–ديسمبر)'];
+  h+=`<div class="panel"><div class="panel-head"><h2>📅 التفصيل الربع سنوي — ${y}</h2></div><div class="panel-body">
+    <table><thead><tr><th>الربع</th><th>المستحق</th><th>المحصّل</th><th>المتبقّي</th><th>نسبة التحصيل</th><th>المصروفات</th><th>الصافي</th></tr></thead><tbody>`;
+  for(let q=1;q<=4;q++){ const a=acct(y,q,null);
+    h+=`<tr>
+      <td style="font-weight:700">${qNames[q-1]}</td>
+      <td>${fmtMoney(a.expected)}</td>
+      <td style="color:var(--success);font-weight:700">${fmtMoney(a.collected)}</td>
+      <td style="color:${a.outstanding>0?'var(--warning)':'var(--muted)'}">${fmtMoney(a.outstanding)}</td>
+      <td>${rateBar(a.rate)}</td>
+      <td style="color:var(--danger)">${a.expenses?fmtMoney(a.expenses):'—'}</td>
+      <td style="font-weight:700;color:${a.net>=0?'var(--success)':'var(--danger)'}">${fmtMoney(a.net)}</td></tr>`;
+  }
+  h+=`<tr style="background:var(--surface-2);font-weight:800;border-top:2px solid var(--border)">
+      <td>الإجمالي السنوي</td><td>${fmtMoney(yr.expected)}</td>
+      <td style="color:var(--success)">${fmtMoney(yr.collected)}</td>
+      <td style="color:var(--warning)">${fmtMoney(yr.outstanding)}</td>
+      <td>${yr.rate}%</td><td style="color:var(--danger)">${fmtMoney(yr.expenses)}</td>
+      <td style="color:${yr.net>=0?'var(--success)':'var(--danger)'}">${fmtMoney(yr.net)}</td></tr>`;
+  h+=`</tbody></table></div></div>`;
+
+  h+=`<div class="panel"><div class="panel-head"><h2>🏢 حسب العقار — ${y}</h2></div><div class="panel-body">
+    <table><thead><tr><th>العقار</th><th>المستحق</th><th>المحصّل</th><th>المتبقّي</th><th>المصروفات</th><th>الصافي</th><th>التحصيل</th></tr></thead><tbody>`;
+  db.buildings.forEach(b=>{ const a=acct(y,null,b.id);
+    h+=`<tr onclick="go('building','${b.id}')" style="cursor:pointer">
+      <td style="font-weight:700">${esc(b.name)}</td>
+      <td>${fmtMoney(a.expected)}</td>
+      <td style="color:var(--success)">${fmtMoney(a.collected)}</td>
+      <td style="color:${a.outstanding>0?'var(--warning)':'var(--muted)'}">${fmtMoney(a.outstanding)}</td>
+      <td style="color:var(--danger)">${a.expenses?fmtMoney(a.expenses):'—'}</td>
+      <td style="font-weight:700;color:${a.net>=0?'var(--success)':'var(--danger)'}">${fmtMoney(a.net)}</td>
+      <td>${rateBar(a.rate)}</td></tr>`;
+  });
+  h+=`</tbody></table></div></div>`;
+
+  if(years.length>1){
+    const maxC=Math.max(...years.map(yy=>acct(yy,null,null).collected),1);
+    h+=`<div class="panel"><div class="panel-head"><h2>📈 المحصّل عبر السنوات</h2></div><div class="panel-body pad">`;
+    years.slice().sort((a,b)=>a-b).forEach(yy=>{ const c=acct(yy,null,null).collected;
+      h+=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div style="width:54px;font-weight:700;${yy===y?'color:var(--primary-d)':''}">${yy}</div>
+        <div style="flex:1;background:var(--surface-2);border-radius:8px;height:26px;overflow:hidden;border:1px solid var(--border)">
+          <div style="height:100%;width:${Math.round(c/maxC*100)}%;background:linear-gradient(90deg,var(--primary),var(--primary-d));min-width:2px"></div></div>
+        <div style="width:140px;text-align:left;font-weight:700">${fmtMoney(c)}</div></div>`;
+    });
+    h+=`</div></div>`;
+  }
+
+  const exps=(db.expenses||[]).filter(e=>yearOf(e.date)===y).sort((a,b)=>a.date<b.date?1:-1);
+  h+=`<div class="panel"><div class="panel-head"><h2>💸 المصروفات — ${y}</h2>
+    <button class="btn btn-sm btn-primary" onclick="openExpenseForm()">➕ إضافة مصروف</button></div><div class="panel-body">`;
+  if(exps.length===0){
+    h+=`<div style="padding:20px;color:var(--muted)">لا توجد مصروفات مسجّلة لهذه السنة. أضِف الصيانة والفواتير والرسوم لاحتساب صافي الدخل بدقة.</div>`;
+  } else {
+    h+=`<table><thead><tr><th>التاريخ</th><th>العقار</th><th>البند</th><th>الوصف</th><th>المبلغ</th><th></th></tr></thead><tbody>`;
+    exps.forEach(e=>{ const b=db.buildings.find(x=>x.id===e.buildingId);
+      h+=`<tr><td>${fmtDate(e.date)}</td>
+        <td>${b?esc(b.name):'<span class="muted">عام</span>'}</td>
+        <td><span class="badge b-gray">${esc(e.category||'أخرى')}</span></td>
+        <td>${esc(e.note||'—')}</td>
+        <td style="font-weight:700;color:var(--danger)">${fmtMoney(e.amount)}</td>
+        <td><button class="btn btn-sm" onclick="openExpenseForm('${e.id}')">✏️</button></td></tr>`;
+    });
+    h+=`<tr style="background:var(--surface-2);font-weight:800"><td colspan="4">إجمالي مصروفات ${y}</td><td style="color:var(--danger)">${fmtMoney(exps.reduce((s,e)=>s+(Number(e.amount)||0),0))}</td><td></td></tr>`;
+    h+=`</tbody></table>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+/* ---------- إدارة المصروفات ---------- */
+function openExpenseForm(eId){
+  const e=eId?(db.expenses.find(x=>x.id===eId)||{}):{date:todayISO()};
+  const cats=['صيانة','كهرباء وماء','رسوم حكومية','ضرائب/زكاة','إدارة','تأمين','تنظيف','أخرى'];
+  openModal(`<div class="modal"><div class="modal-head"><h3>${eId?'✏️ تعديل مصروف':'➕ إضافة مصروف'}</h3><button class="x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="row2">
+        <div class="field"><label>العقار</label><select id="e-building"><option value="">عام (غير مخصّص)</option>${db.buildings.map(b=>`<option value="${b.id}" ${e.buildingId===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>البند</label><select id="e-cat">${cats.map(c=>`<option ${e.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>المبلغ ( ${db.settings.currency} ) *</label><input type="number" id="e-amount" value="${e.amount||''}" placeholder="مثال: 1500"></div>
+        <div class="field"><label>التاريخ *</label><input type="date" id="e-date" value="${e.date||todayISO()}"></div>
+      </div>
+      <div class="field"><label>الوصف</label><input id="e-note" value="${esc(e.note||'')}" placeholder="تفاصيل المصروف"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="saveExpense('${eId||''}')">💾 حفظ</button>
+      <button class="btn" onclick="closeModal()">إلغاء</button>
+      ${eId?`<button class="btn btn-danger" style="margin-inline-start:auto" onclick="deleteExpense('${eId}')">🗑️ حذف</button>`:''}
+    </div></div>`);
+}
+function saveExpense(eId){
+  const amount=parseFloat(document.getElementById('e-amount').value)||0;
+  const date=document.getElementById('e-date').value;
+  if(amount<=0){ alert('أدخل مبلغًا صحيحًا'); return; }
+  if(!date){ alert('أدخل التاريخ'); return; }
+  const data={ buildingId:document.getElementById('e-building').value||null,
+    category:document.getElementById('e-cat').value, amount, date,
+    note:document.getElementById('e-note').value.trim() };
+  if(eId){ Object.assign(db.expenses.find(x=>x.id===eId),data); }
+  else{ db.expenses.push({id:uid(),...data}); }
+  save(); closeModal(); render();
+}
+function deleteExpense(eId){
+  if(!confirm('حذف هذا المصروف؟')) return;
+  db.expenses=db.expenses.filter(x=>x.id!==eId);
+  save(); closeModal(); render();
+}
+
+/* ---------- تقرير محاسبي PDF ---------- */
+function exportAccountingPDF(year){
+  const yr=acct(year,null,null);
+  const qN=['الربع الأول','الربع الثاني','الربع الثالث','الربع الرابع'];
+  let qRows='';
+  for(let q=1;q<=4;q++){ const a=acct(year,q,null);
+    qRows+=`<tr><td>${qN[q-1]}</td><td>${fmtMoney(a.expected)}</td><td style="color:#16a34a">${fmtMoney(a.collected)}</td><td style="color:#d97706">${fmtMoney(a.outstanding)}</td><td>${a.rate}%</td><td style="color:#dc2626">${a.expenses?fmtMoney(a.expenses):'—'}</td><td style="font-weight:bold">${fmtMoney(a.net)}</td></tr>`;
+  }
+  let bRows='';
+  db.buildings.forEach(b=>{ const a=acct(year,null,b.id);
+    bRows+=`<tr><td>${esc(b.name)}</td><td>${fmtMoney(a.expected)}</td><td style="color:#16a34a">${fmtMoney(a.collected)}</td><td style="color:#d97706">${fmtMoney(a.outstanding)}</td><td style="color:#dc2626">${a.expenses?fmtMoney(a.expenses):'—'}</td><td style="font-weight:bold">${fmtMoney(a.net)}</td></tr>`;
+  });
+  const exps=(db.expenses||[]).filter(e=>yearOf(e.date)===year).sort((a,b)=>a.date<b.date?1:-1);
+  let eRows='';
+  exps.forEach(e=>{ const b=db.buildings.find(x=>x.id===e.buildingId);
+    eRows+=`<tr><td>${fmtDate(e.date)}</td><td>${b?esc(b.name):'عام'}</td><td>${esc(e.category||'أخرى')}</td><td>${esc(e.note||'—')}</td><td style="color:#dc2626">${fmtMoney(e.amount)}</td></tr>`;
+  });
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>التقرير المحاسبي ${year}</title>
+  <style>
+    *{font-family:'Segoe UI',Tahoma,Arial,sans-serif;box-sizing:border-box}
+    body{padding:34px;color:#0f172a}
+    .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0f766e;padding-bottom:16px;margin-bottom:20px}
+    .hd h1{font-size:24px;color:#0f766e;margin:0}.hd .meta{font-size:13px;color:#64748b;margin-top:4px}.hd .logo{font-size:40px}
+    .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
+    .cards .c{flex:1;min-width:140px;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;text-align:center}
+    .cards .t{font-size:12px;color:#64748b}.cards .v{font-size:19px;font-weight:bold;margin-top:3px}
+    h2{font-size:16px;color:#0f766e;margin:22px 0 8px;border-right:4px solid #0f766e;padding-right:9px}
+    table{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:6px}
+    th,td{border:1px solid #e2e8f0;padding:9px 11px;text-align:right}
+    th{background:#0f766e;color:#fff}tr:nth-child(even) td{background:#f8fafc}
+    tfoot td,.tot td{background:#eef2f7!important;font-weight:bold}
+    .ft{margin-top:26px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}
+    @media print{body{padding:18px}.noprint{display:none}}
+    .btnbar{text-align:center;margin-bottom:18px}.btnbar button{background:#0f766e;color:#fff;border:none;padding:10px 26px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold}
+  </style></head><body>
+    <div class="btnbar noprint"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button></div>
+    <div class="hd"><div><h1>التقرير المحاسبي السنوي — ${year}</h1>
+      <div class="meta">نظام إدارة الإيجارات • تاريخ الإصدار: ${fmtDate(todayISO())}</div></div><div class="logo">🧮</div></div>
+    <div class="cards">
+      <div class="c"><div class="t">المستحق</div><div class="v">${fmtMoney(yr.expected)}</div></div>
+      <div class="c"><div class="t">المحصّل</div><div class="v" style="color:#16a34a">${fmtMoney(yr.collected)}</div></div>
+      <div class="c"><div class="t">المتبقّي</div><div class="v" style="color:#d97706">${fmtMoney(yr.outstanding)}</div></div>
+      <div class="c"><div class="t">نسبة التحصيل</div><div class="v">${yr.rate}%</div></div>
+      <div class="c"><div class="t">المصروفات</div><div class="v" style="color:#dc2626">${fmtMoney(yr.expenses)}</div></div>
+      <div class="c"><div class="t">صافي الدخل</div><div class="v" style="color:${yr.net>=0?'#16a34a':'#dc2626'}">${fmtMoney(yr.net)}</div></div>
+    </div>
+    <h2>التفصيل الربع سنوي</h2>
+    <table><thead><tr><th>الربع</th><th>المستحق</th><th>المحصّل</th><th>المتبقّي</th><th>التحصيل</th><th>المصروفات</th><th>الصافي</th></tr></thead>
+      <tbody>${qRows}</tbody>
+      <tfoot><tr class="tot"><td>الإجمالي</td><td>${fmtMoney(yr.expected)}</td><td>${fmtMoney(yr.collected)}</td><td>${fmtMoney(yr.outstanding)}</td><td>${yr.rate}%</td><td>${fmtMoney(yr.expenses)}</td><td>${fmtMoney(yr.net)}</td></tr></tfoot></table>
+    <h2>حسب العقار</h2>
+    <table><thead><tr><th>العقار</th><th>المستحق</th><th>المحصّل</th><th>المتبقّي</th><th>المصروفات</th><th>الصافي</th></tr></thead><tbody>${bRows}</tbody></table>
+    ${eRows?`<h2>تفاصيل المصروفات</h2><table><thead><tr><th>التاريخ</th><th>العقار</th><th>البند</th><th>الوصف</th><th>المبلغ</th></tr></thead><tbody>${eRows}</tbody></table>`:''}
+    <div class="ft">طريقة الاحتساب: التجميع حسب السنة والربع الميلادي لتاريخ استحقاق كل دفعة • صافي الدخل = المحصّل − المصروفات • صدر من نظام إدارة الإيجارات</div>
+  </body></html>`);
+  w.document.close();
+}
 
 /* ---------- قائمة العقارات ---------- */
 function viewProperties(){
@@ -789,9 +1025,20 @@ function loadDemo(){
     mk(b1,'شقة 3','','',6000,addMonths(todayISO(),-1),12),
     mk(b2,'محل أرضي 1','مؤسسة النور','0555555555',15000,addMonths(todayISO(),-7),24)
   ];
-  // اجعل بعض الدفعات مسدّدة
-  db.units[0].payments.forEach((p,i)=>{ if(i<2){p.status='paid';p.paidDate=p.dueDate;} });
-  db.units[3].payments.forEach((p,i)=>{ if(i<1){p.status='paid';p.paidDate=p.dueDate;} });
+  // سداد واقعي: أغلب المستحقات الماضية مسدّدة مع ترك بعض المتأخرات لبعض الوحدات
+  db.units.forEach((u,ui)=>{
+    const past=u.payments.filter(p=>daysFromToday(p.dueDate)<0);
+    past.forEach((p,i)=>{
+      const leaveUnpaid=(ui%2===0)&&i===past.length-1; // اترك آخر متأخرة لوحدات معيّنة
+      if(!leaveUnpaid){ p.status='paid'; p.paidDate=p.dueDate; }
+    });
+  });
+  // مصروفات تجريبية
+  db.expenses=[
+    {id:uid(),buildingId:b1,category:'صيانة',amount:1200,date:addMonths(todayISO(),-5),note:'إصلاح مصعد'},
+    {id:uid(),buildingId:b1,category:'كهرباء وماء',amount:800,date:addMonths(todayISO(),-2),note:'فاتورة المرافق'},
+    {id:uid(),buildingId:b2,category:'رسوم حكومية',amount:2500,date:addMonths(todayISO(),-3),note:'رخصة وتصاريح'}
+  ];
   save(); go('dashboard');
 }
 
