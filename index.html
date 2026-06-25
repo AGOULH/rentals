@@ -190,7 +190,7 @@
       <button data-v="dashboard" onclick="go('dashboard')">📊 لوحة التحكم</button>
       <button data-v="properties" onclick="go('properties')">🏘️ العقارات</button>
       <button data-v="accounting" onclick="go('accounting')">🧮 المحاسبة</button>
-      <button onclick="openGuide()">❓ شرح الموقع</button>
+      <button onclick="openGuide()">📖 دليل المستخدم</button>
       <button onclick="openSettings()">⚙️ الإعدادات</button>
     </nav>
   </div>
@@ -725,7 +725,7 @@ function pageEmpty(){
     <p>سجّل العمارة أو العقار ثم أضف الشقق التابعة له وتابع دفعات الإيجار الربع سنوية.</p>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="openBuildingForm()">➕ إضافة عقار</button>
-      <button class="btn" onclick="openGuide()">❓ شرح الموقع</button>
+      <button class="btn" onclick="openGuide()">📖 دليل المستخدم</button>
       <button class="btn" onclick="loadDemo()">📦 تحميل بيانات تجريبية</button>
     </div></div></div>`;
 }
@@ -1138,32 +1138,94 @@ function exportAccountingCSV(year){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='محاسبة-'+year+'.csv'; a.click();
 }
 
-/* ============================ شرح الموقع (خطوات الاستخدام) ============================ */
+/* ============================ دليل المستخدم ============================ */
 function openGuide(){
-  const steps=[
-    ['🔐','رمز الدخول والمزامنة','عند فتح الموقع أدخل رمزًا سريًا. أول مرة اختر رمزًا جديدًا واحفظه — بنفس الرمز تظهر بياناتك على كل أجهزتك (الجوال والكمبيوتر) متزامنة لحظيًا.'],
-    ['🏢','أضف عقارًا','من تبويب «العقارات» اضغط «➕ إضافة عقار»، وأدخل اسم العمارة/العقار والعنوان (وتاريخ التسليم إن كان تحت الإنشاء).'],
-    ['🚪','أضف الوحدات','ادخل على العقار ثم «➕ إضافة وحدة»: رقم الشقة/المحل، اسم المستأجر، قيمة الإيجار الربع سنوي، وتاريخ بداية العقد — ويُنشأ جدول الدفعات تلقائيًا كل 3 أشهر.'],
-    ['✓','سجّل السداد واطبع السند','من «إدارة» الوحدة اضغط «✓ تسجيل سداد» عند استلام كل دفعة، ويمكنك طباعة «🧾 سند قبض» وتسليمه للمستأجر.'],
-    ['📊','تابع لوحة التحكم','تُظهر لك المتأخرات، الدفعات القريبة، العقارات قريبة التسليم، والعقود قريبة الانتهاء — كتذكير دائم بما يحتاج متابعة.'],
-    ['🧮','المحاسبة','التحصيل ربع السنوي والسنوي، نِسب التحصيل، المصروفات، صافي الدخل، وتقرير PDF وتصدير Excel — اختر السنة من أعلى الصفحة.'],
-    ['🔄','تغيير المستأجر','عند تغيّر المستأجر اضغط «🔄 تغيير المستأجر»: يُؤرشف المستأجر القديم وكامل دفعاته تحت اسمه في «المستأجرون السابقون»، ويبدأ عقد جديد دون فقدان أي بيانات.'],
-    ['💾','نسخة احتياطية','من «الإعدادات» نزّل نسخة احتياطية بصيغة JSON بين فترة وأخرى، ويمكنك تغيير العملة ومدد التنبيه.']
+  const sec=[
+   ['🚀','البدء السريع (٨ خطوات)',
+    '<ol style="margin:0;padding-inline-start:20px">'+
+    '<li><b>رمز الدخول:</b> افتح الموقع وأدخل رمزًا سريًا (أول مرة اختر رمزًا جديدًا واحفظه).</li>'+
+    '<li><b>أضف عقارًا</b> من تبويب «العقارات».</li>'+
+    '<li><b>أضف الوحدات</b> داخل العقار (شقق/محلات) مع بيانات العقد.</li>'+
+    '<li><b>سجّل السداد</b> لكل دفعة واطبع «سند قبض».</li>'+
+    '<li><b>تابع لوحة التحكم</b> للمتأخرات والتذكيرات.</li>'+
+    '<li><b>راجع المحاسبة</b> للتحصيل والمصروفات وصافي الدخل.</li>'+
+    '<li><b>غيّر المستأجر</b> عند الحاجة مع حفظ سجل القديم.</li>'+
+    '<li><b>خذ نسخة احتياطية</b> من الإعدادات دوريًا.</li></ol>'],
+   ['🔐','رمز الدخول والمزامنة السحابية',
+    '<ul><li>بياناتك محفوظة في السحابة ومرتبطة بـ<b>رمز سري</b> تختاره.</li>'+
+    '<li>أدخل <b>نفس الرمز</b> على أي جهاز (جوال/كمبيوتر) لترى نفس البيانات — <b>مزامنة لحظية</b>.</li>'+
+    '<li>شارة <b>«🟢 متزامن»</b> أعلى الصفحة تؤكد الاتصال؛ اضغطها لتغيير الرمز أو تسجيل الخروج.</li>'+
+    '<li>بدون إنترنت يعمل النظام محليًا ويتزامن تلقائيًا عند عودة الاتصال.</li></ul>'+
+    '<div class="tip">💡 احفظ رمزك في مكان آمن — هو مفتاح بياناتك ولا يمكن استرجاعها بدونه.</div>'],
+   ['🏢','إدارة العقارات',
+    '<ul><li><b>إضافة:</b> «العقارات» ← «➕ إضافة عقار» (الاسم، العنوان، تاريخ التسليم المتوقع، ملاحظات).</li>'+
+    '<li><b>تاريخ التسليم:</b> للعقارات تحت الإنشاء — يظهر تذكيره في «عقارات قريبة التسليم» بلوحة التحكم.</li>'+
+    '<li><b>تعديل/حذف:</b> من داخل العقار «✏️ تعديل العقار». حذف العقار يحذف وحداته أيضًا.</li></ul>'],
+   ['🚪','الوحدات والعقود',
+    '<ul><li><b>إضافة وحدة</b> داخل العقار: الرقم/الاسم، المستأجر، الإيجار الربع سنوي، تاريخ بداية العقد، المدة.</li>'+
+    '<li><b>جدول الدفعات</b> يُنشأ تلقائيًا: تاريخ الدفعة (ن) = البداية + (ن−1) × 3 أشهر.</li>'+
+    '<li>وحدة <b>بلا مستأجر = شاغرة</b> (لا تُحتسب عليها دفعات).</li>'+
+    '<li><b>نهاية العقد</b> تُحسب تلقائيًا وتظهر في «عقود قريبة الانتهاء».</li></ul>'],
+   ['✓','الدفعات وسند القبض',
+    '<ul><li>افتح الوحدة بزر <b>«إدارة»</b> ثم «✓ تسجيل سداد» عند استلام كل دفعة (يسجّل تاريخ اليوم)، أو «↩️» للتراجع.</li>'+
+    '<li><b>🧾 سند:</b> يطبع إيصال قبض للمستأجر مع تفقيط المبلغ بالعربية.</li>'+
+    '<li><b>📄 تصدير PDF:</b> كشف كامل بكل دفعات الوحدة وحالاتها.</li></ul>'],
+   ['📊','لوحة التحكم',
+    '<ul><li>بطاقات سريعة: عدد العقارات، الوحدات، إجمالي المحصّل، المتأخرات، الدفعات القريبة.</li>'+
+    '<li>جداول متابعة: <b>متأخرات</b>، <b>دفعات قريبة الاستحقاق</b>، <b>عقارات قريبة التسليم</b>، <b>عقود قريبة الانتهاء</b>.</li>'+
+    '<li>مدد التنبيه قابلة للضبط من «الإعدادات».</li></ul>'],
+   ['🧮','المحاسبة',
+    '<ul><li>اختر <b>السنة</b> من أعلى الصفحة.</li>'+
+    '<li>بطاقات: المستحق، المحصّل، المتبقّي، <b>نسبة التحصيل</b>، المصروفات، <b>صافي الدخل</b>.</li>'+
+    '<li><b>التفصيل الربع سنوي</b> + الإجمالي السنوي، و<b>حسب كل عقار</b>، ومقارنة المحصّل عبر السنوات.</li>'+
+    '<li><b>المصروفات:</b> «➕ إضافة مصروف» (البند، العقار، المبلغ، التاريخ) — تُخصم لحساب صافي الدخل.</li>'+
+    '<li><b>📄 تقرير PDF</b> و<b>📊 تصدير Excel</b> للسنة المختارة.</li></ul>'],
+   ['🔄','تغيير المستأجر والأرشفة',
+    '<ul><li>من داخل الوحدة اضغط «🔄 تغيير المستأجر».</li>'+
+    '<li>يُؤرشف المستأجر القديم <b>وكامل دفعاته تحت اسمه</b> في قسم «المستأجرون السابقون».</li>'+
+    '<li>يبدأ المستأجر الجديد بعقد وجدول دفعات جديد دون فقدان أي بيانات.</li>'+
+    '<li>الدفعات المؤرشفة <b>تبقى محسوبة</b> في تقارير المحاسبة التاريخية.</li></ul>'],
+   ['⚙️','الإعدادات والنسخ الاحتياطي',
+    '<ul><li>تغيير <b>العملة</b> ومدد <b>التنبيه</b>.</li>'+
+    '<li><b>⬇️ تنزيل نسخة احتياطية</b> (ملف JSON) — يُنصح به دوريًا.</li>'+
+    '<li><b>⬆️ استيراد نسخة</b> لاستعادة البيانات.</li>'+
+    '<li><b>🗑️ مسح كل البيانات</b> (لا يمكن التراجع).</li></ul>'],
+   ['❓','أسئلة شائعة',
+    '<ul><li><b>هل بياناتي آمنة؟</b> محفوظة سحابيًا ومرتبطة برمزك؛ لا تشارك الرمز إلا مع من تثق به.</li>'+
+    '<li><b>نسيت رمزي؟</b> الرمز مفتاح بياناتك ولا يمكن استرجاعها بدونه — احرص على حفظه.</li>'+
+    '<li><b>هل يعمل بدون إنترنت؟</b> نعم محليًا، ويتزامن عند عودة الاتصال.</li>'+
+    '<li><b>كيف أفتح بياناتي على جهاز جديد؟</b> افتح الرابط وأدخل نفس الرمز.</li>'+
+    '<li><b>كيف تُحسب الدفعات؟</b> ميلاديًا، كل 3 أشهر من تاريخ بداية العقد.</li></ul>']
   ];
-  const body=steps.map((s,i)=>`
-    <div style="display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--border)">
-      <div style="flex-shrink:0;width:42px;height:42px;border-radius:12px;background:var(--primary-l);color:var(--primary-d);display:grid;place-items:center;font-size:21px;position:relative">
-        ${s[0]}<span style="position:absolute;top:-7px;right:-7px;width:21px;height:21px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;border:2px solid #fff">${i+1}</span></div>
-      <div><div style="font-weight:800;font-size:15px;margin-bottom:3px">${s[1]}</div>
-        <div style="color:var(--muted);font-size:13.5px;line-height:1.75">${s[2]}</div></div>
+  const acc=sec.map((s,i)=>`
+    <div class="gsec">
+      <button class="gsec-h" onclick="toggleGuide(${i})"><span>${s[0]} &nbsp;${s[1]}</span><span class="gsec-ar" id="gar${i}" style="${i===0?'transform:rotate(180deg)':''}">▾</span></button>
+      <div class="gsec-b" id="gsec${i}" style="display:${i===0?'block':'none'}">${s[2]}</div>
     </div>`).join('');
-  openModal(`<div class="modal lg"><div class="modal-head"><h3>❓ شرح الموقع — خطوات الاستخدام</h3><button class="x" onclick="closeModal()">✕</button></div>
+  openModal(`<div class="modal lg"><div class="modal-head"><h3>📖 دليل المستخدم</h3><button class="x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="info-box" style="margin-bottom:10px">📖 <div><b>نظام إدارة الإيجارات</b> يساعدك على متابعة دفعات الإيجار الربع سنوية، وإدارة العقارات والوحدات، والمحاسبة الكاملة — مع مزامنة سحابية بين كل أجهزتك.</div></div>
-      ${body}
-      <div class="formula" style="margin-top:14px">📌 <b>معادلة الاستحقاق:</b> تاريخ الدفعة (ن) = تاريخ بداية العقد + (ن−1) × 3 أشهر — دفعات ربع سنوية.</div>
+      <style>
+        .gsec{border:1px solid var(--border);border-radius:11px;margin-bottom:9px;overflow:hidden}
+        .gsec-h{width:100%;background:var(--surface-2);border:none;padding:13px 15px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14.5px;font-weight:800;color:var(--text);cursor:pointer;text-align:right}
+        .gsec-h:hover{background:var(--primary-l)}
+        .gsec-b{padding:13px 16px;font-size:13.5px;line-height:1.85;color:var(--text);border-top:1px solid var(--border)}
+        .gsec-b ul,.gsec-b ol{margin:0;padding-inline-start:20px}
+        .gsec-b li{margin-bottom:6px}
+        .gsec-b b{color:var(--primary-d)}
+        .gsec-b .tip{background:var(--info-l);border-radius:8px;padding:8px 11px;margin-top:9px;color:#1e40af;font-size:12.8px}
+        .gsec-ar{transition:.2s;color:var(--muted);font-size:13px}
+      </style>
+      <div class="info-box" style="margin-bottom:12px">📖 <div><b>نظام إدارة الإيجارات</b> — دليل كامل لمتابعة الإيجارات الربع سنوية، وإدارة العقارات والوحدات، والمحاسبة، مع مزامنة سحابية بين أجهزتك. اضغط أي قسم لفتحه.</div></div>
+      ${acc}
+      <div class="formula" style="margin-top:12px">📌 <b>معادلة الاستحقاق:</b> تاريخ الدفعة (ن) = تاريخ بداية العقد + (ن−1) × 3 أشهر.</div>
     </div>
-    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">فهمت، لنبدأ 🚀</button></div></div>`);
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">إغلاق الدليل</button></div></div>`);
+}
+function toggleGuide(i){
+  const b=document.getElementById('gsec'+i);
+  const open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  document.getElementById('gar'+i).style.transform=open?'':'rotate(180deg)';
 }
 
 /* ============================ الإعدادات والنسخ الاحتياطي ============================ */
