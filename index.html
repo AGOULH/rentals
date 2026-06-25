@@ -190,6 +190,7 @@
       <button data-v="dashboard" onclick="go('dashboard')">📊 لوحة التحكم</button>
       <button data-v="properties" onclick="go('properties')">🏘️ العقارات</button>
       <button data-v="accounting" onclick="go('accounting')">🧮 المحاسبة</button>
+      <button onclick="openGuide()">❓ شرح الموقع</button>
       <button onclick="openSettings()">⚙️ الإعدادات</button>
     </nav>
   </div>
@@ -724,6 +725,7 @@ function pageEmpty(){
     <p>سجّل العمارة أو العقار ثم أضف الشقق التابعة له وتابع دفعات الإيجار الربع سنوية.</p>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="openBuildingForm()">➕ إضافة عقار</button>
+      <button class="btn" onclick="openGuide()">❓ شرح الموقع</button>
       <button class="btn" onclick="loadDemo()">📦 تحميل بيانات تجريبية</button>
     </div></div></div>`;
 }
@@ -1134,6 +1136,34 @@ function exportAccountingCSV(year){
   const csv='﻿'+rows.map(r=>r.map(cell).join(',')).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='محاسبة-'+year+'.csv'; a.click();
+}
+
+/* ============================ شرح الموقع (خطوات الاستخدام) ============================ */
+function openGuide(){
+  const steps=[
+    ['🔐','رمز الدخول والمزامنة','عند فتح الموقع أدخل رمزًا سريًا. أول مرة اختر رمزًا جديدًا واحفظه — بنفس الرمز تظهر بياناتك على كل أجهزتك (الجوال والكمبيوتر) متزامنة لحظيًا.'],
+    ['🏢','أضف عقارًا','من تبويب «العقارات» اضغط «➕ إضافة عقار»، وأدخل اسم العمارة/العقار والعنوان (وتاريخ التسليم إن كان تحت الإنشاء).'],
+    ['🚪','أضف الوحدات','ادخل على العقار ثم «➕ إضافة وحدة»: رقم الشقة/المحل، اسم المستأجر، قيمة الإيجار الربع سنوي، وتاريخ بداية العقد — ويُنشأ جدول الدفعات تلقائيًا كل 3 أشهر.'],
+    ['✓','سجّل السداد واطبع السند','من «إدارة» الوحدة اضغط «✓ تسجيل سداد» عند استلام كل دفعة، ويمكنك طباعة «🧾 سند قبض» وتسليمه للمستأجر.'],
+    ['📊','تابع لوحة التحكم','تُظهر لك المتأخرات، الدفعات القريبة، العقارات قريبة التسليم، والعقود قريبة الانتهاء — كتذكير دائم بما يحتاج متابعة.'],
+    ['🧮','المحاسبة','التحصيل ربع السنوي والسنوي، نِسب التحصيل، المصروفات، صافي الدخل، وتقرير PDF وتصدير Excel — اختر السنة من أعلى الصفحة.'],
+    ['🔄','تغيير المستأجر','عند تغيّر المستأجر اضغط «🔄 تغيير المستأجر»: يُؤرشف المستأجر القديم وكامل دفعاته تحت اسمه في «المستأجرون السابقون»، ويبدأ عقد جديد دون فقدان أي بيانات.'],
+    ['💾','نسخة احتياطية','من «الإعدادات» نزّل نسخة احتياطية بصيغة JSON بين فترة وأخرى، ويمكنك تغيير العملة ومدد التنبيه.']
+  ];
+  const body=steps.map((s,i)=>`
+    <div style="display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--border)">
+      <div style="flex-shrink:0;width:42px;height:42px;border-radius:12px;background:var(--primary-l);color:var(--primary-d);display:grid;place-items:center;font-size:21px;position:relative">
+        ${s[0]}<span style="position:absolute;top:-7px;right:-7px;width:21px;height:21px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;border:2px solid #fff">${i+1}</span></div>
+      <div><div style="font-weight:800;font-size:15px;margin-bottom:3px">${s[1]}</div>
+        <div style="color:var(--muted);font-size:13.5px;line-height:1.75">${s[2]}</div></div>
+    </div>`).join('');
+  openModal(`<div class="modal lg"><div class="modal-head"><h3>❓ شرح الموقع — خطوات الاستخدام</h3><button class="x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="info-box" style="margin-bottom:10px">📖 <div><b>نظام إدارة الإيجارات</b> يساعدك على متابعة دفعات الإيجار الربع سنوية، وإدارة العقارات والوحدات، والمحاسبة الكاملة — مع مزامنة سحابية بين كل أجهزتك.</div></div>
+      ${body}
+      <div class="formula" style="margin-top:14px">📌 <b>معادلة الاستحقاق:</b> تاريخ الدفعة (ن) = تاريخ بداية العقد + (ن−1) × 3 أشهر — دفعات ربع سنوية.</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">فهمت، لنبدأ 🚀</button></div></div>`);
 }
 
 /* ============================ الإعدادات والنسخ الاحتياطي ============================ */
