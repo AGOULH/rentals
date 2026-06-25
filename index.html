@@ -163,12 +163,29 @@
     nav button{padding:8px 12px;font-size:13px}
   }
   @media print{body{background:#fff}.no-print{display:none}}
+
+  /* مزامنة سحابية + شاشة رمز الدخول */
+  .sync-badge{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.35);color:#fff;white-space:nowrap}
+  .sync-badge.ok{background:rgba(22,163,74,.28)}
+  .sync-badge.off{background:rgba(217,119,6,.32)}
+  .sync-badge:hover{filter:brightness(1.12)}
+  .overlay.gate{background:linear-gradient(135deg,var(--primary),var(--primary-d));z-index:200}
+  .gatebox{background:#fff;border-radius:20px;box-shadow:0 24px 60px rgba(0,0,0,.35);padding:36px 30px;width:100%;max-width:410px;text-align:center}
+  .gate-logo{font-size:54px;margin-bottom:6px}
+  .gatebox h2{font-size:21px;font-weight:800;color:var(--text);margin-bottom:8px}
+  .gatebox p{color:var(--muted);font-size:14px;margin-bottom:18px}
+  .gate-hint{color:var(--primary-d);font-size:12.5px;font-weight:600}
+  #gate-code{width:100%;padding:14px 15px;border:1.5px solid var(--border);border-radius:12px;background:var(--surface-2);font-size:17px;text-align:center;letter-spacing:3px;margin-bottom:14px}
+  #gate-code:focus{outline:none;border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px var(--primary-l)}
+  .gate-btn{width:100%;justify-content:center;padding:14px;font-size:15px}
+  .gate-foot{margin-top:18px;font-size:12px;color:#94a3b8;line-height:1.7}
 </style>
 </head>
 <body>
 <header>
   <div class="head-inner">
     <div class="brand"><span class="logo">🏢</span><span>نظام إدارة الإيجارات</span></div>
+    <span id="syncBadge" class="sync-badge" style="display:none" onclick="cloudLogout()" title="اضغط لتغيير الرمز / تسجيل الخروج"></span>
     <nav id="nav">
       <button data-v="dashboard" onclick="go('dashboard')">📊 لوحة التحكم</button>
       <button data-v="properties" onclick="go('properties')">🏘️ العقارات</button>
@@ -180,22 +197,52 @@
 <div class="wrap" id="app"></div>
 <div id="modal-root"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
 /* ============================ البيانات ============================ */
 const STORAGE_KEY = 'rentals_app_v1';
+const CODE_KEY = 'rentals_space_code';
 let db = null;
 let view = { name:'dashboard', buildingId:null };
+
+/* إعدادات Firebase للمزامنة السحابية (مشروع meal-dfd65) */
+const firebaseConfig = {
+  apiKey: "AIzaSyBRwT71-WPRrEIIfG-6mnt2--QXvDOvJjw",
+  authDomain: "meal-dfd65.firebaseapp.com",
+  projectId: "meal-dfd65",
+  storageBucket: "meal-dfd65.firebasestorage.app",
+  messagingSenderId: "630056216874",
+  appId: "1:630056216874:web:c552010369ee1d2b505653"
+};
+let fs = null;
+let cloud = { ready:false, enabled:false, code:null, spaceId:null, ref:null, online:false, applyingRemote:false, saveTimer:null, unsub:null };
+try{
+  if(window.firebase && firebase.initializeApp){
+    firebase.initializeApp(firebaseConfig);
+    fs = firebase.firestore();
+    cloud.ready = true;
+  }
+}catch(e){ cloud.ready = false; console.warn('Firebase init', e); }
 
 function defaults(){
   return { settings:{ currency:'ريال', paymentReminderDays:30, deliveryReminderDays:60 }, buildings:[], units:[] };
 }
-function load(){
+function normalize(d){
+  d = d || defaults();
+  d.settings = Object.assign(defaults().settings, d.settings||{});
+  d.buildings = d.buildings||[]; d.units = d.units||[];
+  return d;
+}
+function loadLocal(){
   try{ const raw = localStorage.getItem(STORAGE_KEY); db = raw ? JSON.parse(raw) : defaults(); }
   catch(e){ db = defaults(); }
-  db.settings = Object.assign(defaults().settings, db.settings||{});
-  db.buildings = db.buildings||[]; db.units = db.units||[];
+  db = normalize(db);
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  if(cloud.enabled && !cloud.applyingRemote) scheduleCloudPush();
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
 /* ============================ التواريخ والأرقام ============================ */
@@ -748,8 +795,91 @@ function loadDemo(){
   save(); go('dashboard');
 }
 
+/* ============================ المزامنة السحابية ============================ */
+function spaceIdFromCode(code){
+  let h=5381; const s=String(code);
+  for(let i=0;i<s.length;i++) h=(((h<<5)+h) ^ s.charCodeAt(i))>>>0;
+  return 'sp'+h.toString(36)+s.length;
+}
+function connectCloud(code){
+  cloud.code=code; cloud.enabled=true; cloud.spaceId=spaceIdFromCode(code);
+  cloud.ref=fs.collection('rentals').doc(cloud.spaceId);
+  localStorage.setItem(CODE_KEY, code);
+  loadLocal(); render(); updateSyncBadge();
+  if(cloud.unsub){ try{cloud.unsub();}catch(e){} }
+  cloud.unsub = cloud.ref.onSnapshot(function(snap){
+    cloud.online = true;
+    if(snap.exists && snap.data() && snap.data().json){
+      try{
+        const remote = normalize(JSON.parse(snap.data().json));
+        cloud.applyingRemote = true;
+        db = remote;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        cloud.applyingRemote = false;
+        if(!document.querySelector('.overlay')) render();
+      }catch(e){ console.warn('apply remote', e); }
+    } else {
+      pushCloud(); // أول مرة لهذا الرمز: ارفع البيانات الحالية لإنشاء المساحة
+    }
+    updateSyncBadge();
+  }, function(err){ cloud.online=false; updateSyncBadge(); console.warn('snapshot', err); });
+}
+function scheduleCloudPush(){ clearTimeout(cloud.saveTimer); cloud.saveTimer=setTimeout(pushCloud, 400); }
+function pushCloud(){
+  if(!cloud.ref) return;
+  cloud.ref.set({ json: JSON.stringify(db), updatedAt: Date.now() })
+    .then(function(){ cloud.online=true; updateSyncBadge(); })
+    .catch(function(e){ cloud.online=false; updateSyncBadge(); console.warn('push', e); });
+}
+function cloudLogout(){
+  if(!cloud.enabled) return;
+  if(!confirm('تسجيل الخروج من المزامنة على هذا الجهاز؟\nبياناتك تبقى محفوظة في السحابة وتُسترجع بإدخال نفس الرمز.')) return;
+  if(cloud.unsub){ try{cloud.unsub();}catch(e){} }
+  cloud.enabled=false; cloud.ref=null; cloud.code=null; cloud.unsub=null;
+  localStorage.removeItem(CODE_KEY);
+  updateSyncBadge(); showGate();
+}
+function updateSyncBadge(){
+  const el=document.getElementById('syncBadge'); if(!el) return;
+  if(!cloud.enabled){ el.style.display='none'; return; }
+  el.style.display='inline-flex';
+  if(cloud.online){ el.className='sync-badge ok'; el.innerHTML='🟢 متزامن'; }
+  else{ el.className='sync-badge off'; el.innerHTML='🟠 غير متصل'; }
+}
+
+/* ---------- شاشة رمز الدخول ---------- */
+function showGate(){
+  document.getElementById('modal-root').innerHTML=
+    '<div class="overlay gate"><div class="gatebox">'
+    +'<div class="gate-logo">🏢</div>'
+    +'<h2>نظام إدارة الإيجارات</h2>'
+    +'<p>أدخل رمز الدخول للوصول إلى بياناتك على كل الأجهزة.<br>'
+    +'<span class="gate-hint">أول مرة؟ اختر رمزًا جديدًا واحفظه — هو مفتاح بياناتك.</span></p>'
+    +'<input id="gate-code" type="password" inputmode="text" placeholder="رمز الدخول" onkeydown="if(event.key===\'Enter\')submitGate()">'
+    +'<button class="btn btn-primary gate-btn" onclick="submitGate()">🔓 دخول ومزامنة</button>'
+    +'<div class="gate-foot">🔒 بياناتك مرتبطة بهذا الرمز. لا تشاركه إلا مع من تريد أن يطّلع على نفس البيانات أو يعدّلها.</div>'
+    +'</div></div>';
+  setTimeout(function(){ var i=document.getElementById('gate-code'); if(i) i.focus(); }, 60);
+}
+function submitGate(){
+  var code=(document.getElementById('gate-code').value||'').trim();
+  if(code.length<4){ alert('اختر رمزًا من 4 خانات على الأقل'); return; }
+  closeModal();
+  connectCloud(code);
+}
+
 /* ============================ التشغيل ============================ */
-load(); render();
+function bootstrap(){
+  if(cloud.ready){
+    var saved=localStorage.getItem(CODE_KEY);
+    if(saved){ connectCloud(saved); }
+    else{ loadLocal(); render(); showGate(); }
+  } else {
+    // تعذّر تحميل Firebase (بلا إنترنت مثلًا): وضع محلي فقط على هذا الجهاز
+    loadLocal(); render();
+  }
+}
+bootstrap();
 </script>
 </body>
 </html>
