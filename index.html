@@ -68,6 +68,11 @@
   .stat .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:21px;margin-bottom:10px}
   .stat .val{font-size:28px;font-weight:800;line-height:1.1}
   .stat .lbl{color:var(--muted);font-size:13px;font-weight:600;margin-top:3px}
+  .stat.clickable{cursor:pointer;transition:.18s}
+  .stat.clickable:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(15,23,42,.13);border-color:var(--primary)}
+  .stat .stat-go{position:absolute;bottom:12px;left:16px;font-size:12px;font-weight:800;color:var(--primary);opacity:0;transition:.18s}
+  .stat.clickable:hover .stat-go{opacity:1}
+  tbody tr.rowlink{cursor:pointer}
   .ic.teal{background:var(--primary-l);color:var(--primary-d)}
   .ic.green{background:var(--success-l);color:var(--success)}
   .ic.red{background:var(--danger-l);color:var(--danger)}
@@ -344,20 +349,20 @@ function viewDashboard(){
     <div class="sub">نظرة عامة على العقارات والمستحقات — ${fmtDate(todayISO())}</div></div></div>`;
 
   h+=`<div class="stats">
-    ${stat('teal','🏢',db.buildings.length,'عدد العقارات')}
-    ${stat('blue','🚪',units.length,'إجمالي الوحدات')}
-    ${stat('green','✅',fmtMoney(totalCollected),'إجمالي المحصّل')}
-    ${stat('red','⚠️',overdue.length,'دفعات متأخرة')}
-    ${stat('amber','⏰',dueSoon.length,'دفعات قريبة')}
+    ${stat('teal','🏢',db.buildings.length,'عدد العقارات',"go('properties')")}
+    ${stat('blue','🚪',units.length,'إجمالي الوحدات',"go('properties')")}
+    ${stat('green','✅',fmtMoney(totalCollected),'إجمالي المحصّل',"go('accounting')")}
+    ${stat('red','⚠️',overdue.length,'دفعات متأخرة',"scrollToPanel('p-overdue')")}
+    ${stat('amber','⏰',dueSoon.length,'دفعات قريبة',"scrollToPanel('p-duesoon')")}
   </div>`;
 
   // متأخرات
-  h+=`<div class="panel"><div class="panel-head"><h2>⚠️ دفعات متأخرة</h2>
+  h+=`<div class="panel" id="p-overdue"><div class="panel-head"><h2>⚠️ دفعات متأخرة</h2>
     <span class="count">${overdue.length} دفعة • ${fmtMoney(overdue.reduce((s,p)=>s+p.amount,0))}</span></div>`;
   if(overdue.length===0) h+=`<div class="panel-body pad" style="color:var(--success);font-weight:700">🎉 لا توجد دفعات متأخرة، كل شيء على ما يرام.</div>`;
   else{
     h+=`<div class="panel-body"><table><thead><tr><th>العقار</th><th>الوحدة</th><th>المستأجر</th><th>تاريخ الاستحقاق</th><th>التأخير</th><th>المبلغ</th><th></th></tr></thead><tbody>`;
-    overdue.slice(0,12).forEach(p=>{ h+=`<tr>
+    overdue.slice(0,12).forEach(p=>{ h+=`<tr class="rowlink" onclick="openUnit('${p.unit.id}')">
       <td>${esc(p.building?p.building.name:'—')}</td>
       <td>${esc(p.unit.name)}</td>
       <td>${esc(p.unit.tenantName||'—')}</td>
@@ -372,10 +377,10 @@ function viewDashboard(){
 
   // قريبة الاستحقاق
   if(dueSoon.length){
-    h+=`<div class="panel"><div class="panel-head"><h2>⏰ دفعات قريبة الاستحقاق (خلال ${db.settings.paymentReminderDays} يوم)</h2>
+    h+=`<div class="panel" id="p-duesoon"><div class="panel-head"><h2>⏰ دفعات قريبة الاستحقاق (خلال ${db.settings.paymentReminderDays} يوم)</h2>
       <span class="count">${dueSoon.length} دفعة</span></div><div class="panel-body"><table>
       <thead><tr><th>العقار</th><th>الوحدة</th><th>المستأجر</th><th>تاريخ الاستحقاق</th><th>باقٍ</th><th>المبلغ</th><th></th></tr></thead><tbody>`;
-    dueSoon.slice(0,12).forEach(p=>{ h+=`<tr>
+    dueSoon.slice(0,12).forEach(p=>{ h+=`<tr class="rowlink" onclick="openUnit('${p.unit.id}')">
       <td>${esc(p.building?p.building.name:'—')}</td><td>${esc(p.unit.name)}</td>
       <td>${esc(p.unit.tenantName||'—')}</td><td>${fmtDate(p.dueDate)}</td>
       <td><span class="badge b-amber">بعد ${daysFromToday(p.dueDate)} يوم</span></td>
@@ -408,7 +413,18 @@ function viewDashboard(){
 
   return h;
 }
-function stat(c,ic,val,lbl){ return `<div class="stat"><div class="ic ${c}">${ic}</div><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`; }
+function stat(c,ic,val,lbl,action){
+  return `<div class="stat${action?' clickable':''}"${action?` onclick="${action}"`:''}>
+    <div class="ic ${c}">${ic}</div><div class="val">${val}</div><div class="lbl">${lbl}</div>
+    ${action?'<div class="stat-go">عرض ›</div>':''}</div>`;
+}
+function scrollToPanel(id){
+  const el=document.getElementById(id); if(!el) return;
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+  el.style.transition='box-shadow .25s';
+  el.style.boxShadow='0 0 0 3px var(--primary)';
+  setTimeout(function(){ el.style.boxShadow=''; }, 1300);
+}
 
 /* ============================ المحاسبة ============================ */
 let acctYear = null;
