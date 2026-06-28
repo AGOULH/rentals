@@ -260,6 +260,40 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function periodMos(u){ return {monthly:1,quarterly:3,semiannual:6,annual:12}[u.paymentPeriod||'quarterly']||3; }
 function periodLbl(u){ return {monthly:'شهري',quarterly:'ربع سنوي',semiannual:'نصف سنوي',annual:'سنوي'}[u.paymentPeriod||'quarterly']||'ربع سنوي'; }
 
+/* واتساب — يفتح الجوال مباشرة على الرقم، الجهاز الثابت يفتح واتساب ويب */
+function isMobile(){ return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
+function openWhatsApp(phone,msg){
+  const p=(phone||'').replace(/[^0-9]/g,'');
+  const enc=encodeURIComponent(msg);
+  const url=p?(isMobile()?`whatsapp://send?phone=${p}&text=${enc}`:`https://wa.me/${p}?text=${enc}`):`https://wa.me/?text=${enc}`;
+  window.open(url,'_blank');
+}
+/* يُنشئ سكريبت يُضاف لنوافذ الطباعة: يشارك الصفحة كملف HTML على الجوال أو يفتح واتساب بنص */
+function waWindowScript(phone,msg,title){
+  const p=JSON.stringify((phone||'').replace(/[^0-9]/g,''));
+  const m=JSON.stringify(msg||'');
+  const t=JSON.stringify(title||'مستند');
+  return `<scr`+`ipt>
+function sendWA(){
+  var p=${p},msg=${m},ttl=${t};
+  var mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(mob&&navigator.share){
+    var blob=new Blob([document.documentElement.outerHTML],{type:'text/html'});
+    var file=new File([blob],ttl+'.html',{type:'text/html'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      navigator.share({files:[file],title:ttl}).catch(function(){
+        window.open((p?'whatsapp://send?phone='+p+'&text=':'https://wa.me/?text=')+encodeURIComponent(msg),'_blank');
+      });
+      return;
+    }
+  }
+  var enc=encodeURIComponent(msg);
+  var url=p?(mob?'whatsapp://send?phone='+p+'&text='+enc:'https://wa.me/'+p+'?text='+enc):'https://wa.me/?text='+enc;
+  window.open(url,'_blank');
+}
+<\/scr`+`ipt>`;
+}
+
 /* ============================ التواريخ والأرقام ============================ */
 function todayISO(){ const d=new Date(); d.setHours(0,0,0,0);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -487,17 +521,14 @@ function sendPaymentWhatsApp(uId,pId){
   const p=(u.payments||[]).find(x=>x.id===pId); if(!p) return;
   const d=daysFromToday(p.dueDate);
   const msg=`السلام عليكم ${u.tenantName||''}،\nنود تذكيركم بموعد سداد إيجار\n${b.name} — ${u.name}\n\nالدفعة رقم: ${p.n}\nتاريخ الاستحقاق: ${fmtDate(p.dueDate)}\nالمبلغ: ${fmtMoney(p.amount)}\n${d>0?'المتبقي: '+d+' يوم':d===0?'مستحقة اليوم ⚠️':'متأخرة '+Math.abs(d)+' يوم ⚠️'}\n\nشكرًا لتعاملكم معنا.`;
-  const phone=(u.tenantPhone||'').replace(/[^0-9]/g,'');
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,'_blank');
+  openWhatsApp(u.tenantPhone,msg);
 }
 function printDueNotice(uId,pId){
   const u=db.units.find(x=>x.id===uId);
   const b=db.buildings.find(x=>x.id===u.buildingId);
   const p=(u.payments||[]).find(x=>x.id===pId); if(!p) return;
   const d=daysFromToday(p.dueDate);
-  const phone=(u.tenantPhone||'').replace(/[^0-9]/g,'');
   const waMsg=`إشعار استحقاق دفعة إيجار\n${b.name} — ${u.name}\nالمستأجر: ${u.tenantName||''}\nالدفعة رقم: ${p.n}\nتاريخ الاستحقاق: ${fmtDate(p.dueDate)}\nالمبلغ: ${fmtMoney(p.amount)}`;
-  const waUrl=phone?`https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`:'';
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>إشعار استحقاق</title>
   <style>*{font-family:'Segoe UI',Tahoma,Arial,sans-serif;box-sizing:border-box}body{padding:40px;color:#0f172a}
@@ -508,10 +539,12 @@ function printDueNotice(uId,pId){
   .amount{background:#fef3c7;border:1px solid #fde68a;border-radius:12px;padding:16px;margin:18px 0;text-align:center}
   .amount .big{font-size:32px;font-weight:bold;color:#d97706}
   .btnbar{text-align:center;margin-bottom:18px}.btnbar button{border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold;margin:0 5px}
-  @media print{.noprint{display:none}}</style></head><body>
+  @media print{.noprint{display:none}}</style>
+  ${waWindowScript(u.tenantPhone,waMsg,'إشعار-استحقاق')}
+  </head><body>
   <div class="btnbar noprint">
-    <button style="background:#0f766e;color:#fff" onclick="window.print()">🖨️ طباعة</button>
-    ${waUrl?`<button style="background:#25d366;color:#fff" onclick="window.open(${JSON.stringify(waUrl)},'_blank')">💬 إرسال واتساب</button>`:''}
+    <button style="background:#0f766e;color:#fff" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+    ${u.tenantPhone?`<button style="background:#25d366;color:#fff" onclick="sendWA()">💬 إرسال واتساب</button>`:''}
   </div>
   <div class="vh"><div><h1>إشعار استحقاق دفعة إيجار</h1></div><div style="font-size:36px">📋</div></div>
   <div class="vb">
@@ -1039,8 +1072,7 @@ function sendUnitWhatsApp(uId){
   const t=unitTotals(u);
   const nx=nextUnpaid(u);
   const msg=`نظام إدارة الإيجارات 🏢\n\nالعقار: ${b.name}\nالوحدة: ${u.name}\nالمستأجر: ${u.tenantName||'—'}\nالإيجار: ${fmtMoney(u.rentAmount)} — ${periodLbl(u)}\n\nالمحصّل: ${fmtMoney(t.paid)}\nالمتبقّي: ${fmtMoney(t.remaining)}${nx?'\n\nالدفعة القادمة:\nالتاريخ: '+fmtDate(nx.dueDate)+'\nالمبلغ: '+fmtMoney(nx.amount):''}`;
-  const phone=(u.tenantPhone||'').replace(/[^0-9]/g,'');
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,'_blank');
+  openWhatsApp(u.tenantPhone,msg);
 }
 function togglePay(uId,pId){
   const u=db.units.find(x=>x.id===uId);
@@ -1064,9 +1096,7 @@ function paymentReportHTML(b, o){
   const payments=o.payments||[];
   const paidT=payments.filter(p=>p.status==='paid').reduce((s,p)=>s+p.amount,0);
   const totalT=payments.reduce((s,p)=>s+p.amount,0);
-  const phone=(o.phone||'').replace(/[^0-9]/g,'');
   const waMsg=`كشف دفعات الإيجار\nالعقار: ${b.name}\nالوحدة: ${o.unitName}\nالمستأجر: ${o.tenant||'—'}\nالإيجار: ${fmtMoney(o.rent)}${o.period?' ('+o.period+')':''}\nبداية العقد: ${fmtDate(o.start)}\nنهاية العقد: ${fmtDate(addMonths(o.start,o.dur||12))}\n\nإجمالي العقد: ${fmtMoney(totalT)}\nالمحصّل: ${fmtMoney(paidT)}\nالمتبقّي: ${fmtMoney(totalT-paidT)}`;
-  const waUrl=phone?`https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`:'';
   let rows='';
   payments.forEach(p=>{
     const st=p.status==='paid'?'paid':(daysFromToday(p.dueDate)<0?'overdue':(daysFromToday(p.dueDate)<=db.settings.paymentReminderDays?'due':'upcoming'));
@@ -1098,9 +1128,12 @@ function paymentReportHTML(b, o){
     .ft{margin-top:26px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:12px}
     @media print{body{padding:18px}.noprint{display:none}}
     .btnbar{text-align:center;margin-bottom:18px}
-    .btnbar button{background:#0f766e;color:#fff;border:none;padding:10px 26px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold}
-  </style></head><body>
-    <div class="btnbar noprint"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>${waUrl?` <button style="background:#25d366;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold" onclick="window.open(${JSON.stringify(waUrl)},'_blank')">💬 إرسال واتساب</button>`:''}</div>
+    .btnbar button{border:none;padding:10px 26px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold;margin:0 5px}
+  </style>${waWindowScript(o.phone,waMsg,'كشف-دفعات')}</head><body>
+    <div class="btnbar noprint">
+      <button style="background:#0f766e;color:#fff" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+      ${o.phone?`<button style="background:#25d366;color:#fff" onclick="sendWA()">💬 إرسال واتساب</button>`:''}
+    </div>
     <div class="hd"><div><h1>كشف دفعات الإيجار</h1>
       <div class="meta">عقار: <b>${esc(b.name)}</b> ${b.address?'• '+esc(b.address):''}</div>
       <div class="meta">تاريخ الإصدار: ${fmtDate(todayISO())}</div></div>
@@ -1159,9 +1192,7 @@ function printReceipt(uId,payId,histIdx){
   const p=(src.payments||[]).find(x=>x.id===payId); if(!p) return;
   const recNo='R'+(p.paidDate||todayISO()).replace(/-/g,'')+'-'+String(u.id).slice(-3).toUpperCase()+p.n;
   const cur=db.settings.currency;
-  const rcptPhone=(src.tenantPhone||'').replace(/[^0-9]/g,'');
   const rcptMsg=`سند قبض — رقم: ${recNo}\nالتاريخ: ${fmtDate(p.paidDate||todayISO())}\nاستلمنا من: ${src.tenantName||'—'}\nعن إيجار: ${u.name} — ${b.name}\nالدفعة رقم: ${p.n}\nالمبلغ: ${fmtMoney(p.amount)}`;
-  const rcptWaUrl=rcptPhone?`https://wa.me/${rcptPhone}?text=${encodeURIComponent(rcptMsg)}`:'';
   openReportWindow(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>سند قبض ${recNo}</title>
   <style>
     *{font-family:'Segoe UI',Tahoma,Arial,sans-serif;box-sizing:border-box}
@@ -1179,9 +1210,12 @@ function printReceipt(uId,payId,histIdx){
     .sign div{text-align:center;width:42%}.sign .ln{border-top:1px solid #94a3b8;margin-top:36px;padding-top:6px;color:#64748b}
     .ft{text-align:center;font-size:11px;color:#94a3b8;margin-top:18px}
     @media print{body{padding:10px}.noprint{display:none}}
-    .btnbar{text-align:center;margin-bottom:18px}.btnbar button{background:#0f766e;color:#fff;border:none;padding:10px 26px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold}
-  </style></head><body>
-    <div class="btnbar noprint"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button>${rcptWaUrl?` <button style="background:#25d366;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold" onclick="window.open(${JSON.stringify(rcptWaUrl)},'_blank')">💬 إرسال واتساب</button>`:''}</div>
+    .btnbar{text-align:center;margin-bottom:18px}.btnbar button{border:none;padding:10px 26px;border-radius:8px;font-size:15px;cursor:pointer;font-weight:bold;margin:0 5px}
+  </style>${waWindowScript(src.tenantPhone,rcptMsg,'سند-قبض')}</head><body>
+    <div class="btnbar noprint">
+      <button style="background:#0f766e;color:#fff" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+      ${src.tenantPhone?`<button style="background:#25d366;color:#fff" onclick="sendWA()">💬 إرسال واتساب</button>`:''}
+    </div>
     <div class="voucher">
       <div class="vh"><div><h1>سند قبض</h1><div class="no">رقم: ${recNo}</div></div><div style="font-size:38px">🧾</div></div>
       <div class="vb">
