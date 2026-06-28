@@ -268,28 +268,42 @@ function openWhatsApp(phone,msg){
   const url=p?(isMobile()?`whatsapp://send?phone=${p}&text=${enc}`:`https://wa.me/${p}?text=${enc}`):`https://wa.me/?text=${enc}`;
   window.open(url,'_blank');
 }
-/* يُنشئ سكريبت يُضاف لنوافذ الطباعة: يشارك الصفحة كملف HTML على الجوال أو يفتح واتساب بنص */
+/* يُنشئ سكريبت لنوافذ المستندات: يلتقط الصفحة كصورة PNG ويشاركها عبر واتساب */
 function waWindowScript(phone,msg,title){
   const p=JSON.stringify((phone||'').replace(/[^0-9]/g,''));
   const m=JSON.stringify(msg||'');
   const t=JSON.stringify(title||'مستند');
-  return `<scr`+`ipt>
+  return `<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script><scr`+`ipt>
 function sendWA(){
   var p=${p},msg=${m},ttl=${t};
   var mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if(mob&&navigator.share){
-    var blob=new Blob([document.documentElement.outerHTML],{type:'text/html'});
-    var file=new File([blob],ttl+'.html',{type:'text/html'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      navigator.share({files:[file],title:ttl}).catch(function(){
-        window.open((p?'whatsapp://send?phone='+p+'&text=':'https://wa.me/?text=')+encodeURIComponent(msg),'_blank');
+  function goText(){
+    var enc=encodeURIComponent(msg);
+    window.open(p?(mob?'whatsapp://send?phone='+p+'&text='+enc:'https://wa.me/'+p+'?text='+enc):'https://wa.me/?text='+enc,'_blank');
+  }
+  function doShare(blob){
+    var file=new File([blob],ttl+'.png',{type:'image/png'});
+    if(navigator.share){
+      navigator.share({files:[file],title:ttl}).catch(function(e){
+        if(e.name!=='AbortError') goText();
       });
-      return;
+    } else {
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=ttl+'.png';
+      a.click();
+      setTimeout(goText,400);
     }
   }
-  var enc=encodeURIComponent(msg);
-  var url=p?(mob?'whatsapp://send?phone='+p+'&text='+enc:'https://wa.me/'+p+'?text='+enc):'https://wa.me/?text='+enc;
-  window.open(url,'_blank');
+  if(typeof html2canvas==='undefined'){ goText(); return; }
+  var noprint=document.querySelectorAll('.noprint,.btnbar');
+  noprint.forEach(function(el){el.style.visibility='hidden';});
+  html2canvas(document.body,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false})
+    .then(function(canvas){
+      noprint.forEach(function(el){el.style.visibility='';});
+      canvas.toBlob(function(blob){ doShare(blob); },'image/png');
+    })
+    .catch(function(){ noprint.forEach(function(el){el.style.visibility='';}); goText(); });
 }
 <\/scr`+`ipt>`;
 }
